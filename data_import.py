@@ -45,6 +45,7 @@ if __name__ == '__main__':
 
     # data loading
     df = data_load(excel_file, excel_sheet, index_col, header)
+    data_list = pd.Series(df.columns)
 
     # replace string values for num 1|0
     df = df.replace('есть', 1)
@@ -55,17 +56,17 @@ if __name__ == '__main__':
     df = df.replace('БиМКШ', 0)
 
     # Change objects ans specific data into categorical data
-    spec_categ_cols = ['Пред. |Оценка|ФК ХСН', 'Пред. |ЭХО-КГ до|ФВ ЛЖ']            # list of extra categorical cols
+    # spec_categ_cols = ['Пред. |Оценка|ФК ХСН', 'Пред. |ЭХО-КГ до|ФВ ЛЖ']            # list of extra categorical cols
+    #
+    # categorical_cols = [col for col in df.columns if df[col].dtype == "object"]
+    # object_nunique = list(map(lambda col: df[col].nunique(), categorical_cols))
+    # print('The number of unique entries in each column with categorical data:')
+    # print(pd.Series(dict(zip(categorical_cols, object_nunique))),'\n')
 
-    categorical_cols = [col for col in df.columns if df[col].dtype == "object"]
-    object_nunique = list(map(lambda col: df[col].nunique(), categorical_cols))
-    print('The number of unique entries in each column with categorical data:')
-    print(pd.Series(dict(zip(categorical_cols, object_nunique))),'\n')
-
-    categorical_cols.extend(spec_categ_cols)
-    df_categ_labeled = pd.get_dummies(df[categorical_cols])
-    df = pd.concat([df, df_categ_labeled], ignore_index=False, axis=1)
-    df = df.drop(categorical_cols, axis=1)
+    # categorical_cols.extend(spec_categ_cols)
+    # df_categ_labeled = pd.get_dummies(df[categorical_cols])
+    # df = pd.concat([df, df_categ_labeled], ignore_index=False, axis=1)
+    # df = df.drop(categorical_cols, axis=1)
 
     # find binary data
     binary_cols = df[df.columns].isin([0, np.nan, 1]).all()                         # find NaN|1|0 cols in all data
@@ -81,11 +82,18 @@ if __name__ == '__main__':
     print('Checking types of data:')
     print(pd.Series(df.dtypes).groupby(df.dtypes).count())
 
-    # drop unbalanced data
+    # drop unbalanced data outside 10-90%
     binary_disbalace = df[binary_cols_lst]
     binary_disbalace = binary_disbalace[binary_disbalace == 1].count() / len(binary_disbalace)
     drop_cals = binary_disbalace[(binary_disbalace < 0.10) | (binary_disbalace > 0.90)].index
     df.drop(drop_cals, axis=1, inplace=True)
+
+    # check the remained data
+    data_list = pd.DataFrame(data_list, index = data_list.values)
+    remained_data = pd.Series('yes', index=[col for col in list(df.columns) if col in list(data_list.index)])
+    data_list.rename(columns={data_list.columns[0]: 'remained'}, inplace=True)
+    data_list['remained'] = remained_data
+    data_list.to_excel("dataset/remained_data_list.xlsx")
 
     # fill NA/NaN values in float data
     float_cols_lst = list(df.dtypes[df.dtypes == 'float64'].index)
@@ -93,5 +101,7 @@ if __name__ == '__main__':
 
     # save prepared data to excel
     df.to_excel("dataset/prepared_data.xlsx", sheet_name='prepared_data')
+
+
 
 
