@@ -56,15 +56,15 @@ if __name__ == '__main__':
     df = df.replace('БиМКШ', 0)
 
     # Change objects ans specific data into categorical data
-    # spec_categ_cols = ['Пред. |Оценка|ФК ХСН', 'Пред. |ЭХО-КГ до|ФВ ЛЖ']            # list of extra categorical cols
-    #
-    # categorical_cols = [col for col in df.columns if df[col].dtype == "object"]
-    # object_nunique = list(map(lambda col: df[col].nunique(), categorical_cols))
-    # print('The number of unique entries in each column with categorical data:')
-    # print(pd.Series(dict(zip(categorical_cols, object_nunique))),'\n')
+    # spec_categ_cols = ['Пред. |Оценка|ФК ХСН', 'Пред. |ЭХО-КГ до|ФВ ЛЖ']          # list of extra categorical cols
+
+    categorical_cols = [col for col in df.columns if df[col].dtype == "object"]
+    object_nunique = list(map(lambda col: df[col].nunique(), categorical_cols))
+    print('The number of unique entries in each column with categorical data:')
+    print(pd.Series(dict(zip(categorical_cols, object_nunique))),'\n')
 
     # categorical_cols.extend(spec_categ_cols)
-    # df_categ_labeled = pd.get_dummies(df[categorical_cols])
+    # df_categ_labeled = pd.get_dummies(df[categorical_cols])                       # encoding categorical columns
     # df = pd.concat([df, df_categ_labeled], ignore_index=False, axis=1)
     # df = df.drop(categorical_cols, axis=1)
 
@@ -77,20 +77,26 @@ if __name__ == '__main__':
 
     # data type transformation
     df[binary_cols_lst] = df[binary_cols_lst].astype(np.uint8)                      # uint8 for 1|0 cols
-    int64_cols_lst = list(df.dtypes[df.dtypes == 'int64'].index)                    # list of int64 cols
+    int64_cols_lst = df.dtypes[df.dtypes == 'int64'].index                          # list of int64 cols
     df[int64_cols_lst] = df[int64_cols_lst].astype(np.float64)                      # int64 -> float64
     print('Checking types of data:')
     print(pd.Series(df.dtypes).groupby(df.dtypes).count())
 
-    # drop unbalanced data outside 10-90%
+    # drop imbalanced data outside 10-90%
     binary_disbalace = df[binary_cols_lst]
-    binary_disbalace = binary_disbalace[binary_disbalace == 1].count() / len(binary_disbalace)
-    drop_cals = binary_disbalace[(binary_disbalace < 0.10) | (binary_disbalace > 0.90)].index
+    binary_disbalace = binary_disbalace[binary_disbalace == 1].count() \
+                       / len(binary_disbalace)
+    drop_cals = binary_disbalace[(binary_disbalace < 0.10) |
+                                 (binary_disbalace > 0.90)].index                   # drop data outside 10-90%
+    drop_cals = list(drop_cals)
+    drop_cals.remove('Пред. |Общ.|Пол')                                             # save a specific element
+    drop_cals.remove('Пред. |ФР ССЗ|АГ')                                            # save a specific element
     df.drop(drop_cals, axis=1, inplace=True)
 
     # check the remained data
     data_list = pd.DataFrame(data_list, index = data_list.values)
-    remained_data = pd.Series('yes', index=[col for col in list(df.columns) if col in list(data_list.index)])
+    remained_data = pd.Series('yes', index=[col for col in list(df.columns)
+                                            if col in list(data_list.index)])
     data_list.rename(columns={data_list.columns[0]: 'remained'}, inplace=True)
     data_list['remained'] = remained_data
     data_list.to_excel("dataset/remained_data_list.xlsx")
@@ -104,4 +110,4 @@ if __name__ == '__main__':
 
 
 
-
+# df.loc[:, (df.max() > 1) & (df.max() < 6) & (df.max() % 1 == 0)]
