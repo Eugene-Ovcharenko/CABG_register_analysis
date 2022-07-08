@@ -110,4 +110,4 @@ if __name__ == '__main__':
 
 
 
-# df.loc[:, (df.max() > 1) & (df.max() < 6) & (df.max() % 1 == 0)]
+

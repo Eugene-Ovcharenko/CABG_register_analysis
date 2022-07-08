@@ -1,13 +1,16 @@
 import os
-
-import pandas as pd
 import numpy as np
-import xlsxwriter
-import scipy
-import seaborn as sns
-import matplotlib.pyplot as plt
+import pandas as pd
 from pandas import DataFrame
+
+import xlsxwriter
+import matplotlib.pyplot as plt
+import seaborn as sns
+
+import scipy
 from scipy.stats import fisher_exact
+from sklearn.feature_selection import mutual_info_regression
+
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -65,27 +68,60 @@ def fisher_ODDS_ratio(
                                   'format': grn_format})
     return(0)
 
+def mutual_information(X, y):
+    X = X.copy()
+    # for colname in X.select_dtypes(["object", "category"]):
+    #     X[colname], _ = X[colname].factorize()
+    discrete_features = [pd.api.types.is_integer_dtype(t) for t in X.dtypes]
+    mi_scores = mutual_info_regression(X, y, discrete_features=discrete_features, random_state=0)
+    mi_scores = pd.Series(mi_scores, name="MI Scores", index=X.columns)
+    mi_scores = mi_scores.sort_values(ascending=False)
+    return mi_scores
+
+def cor_plot(df):  # Correlation visualization function
+    corr = df.corr()
+    mask = np.triu(np.ones_like(corr, dtype=bool), 1)                               #  mask for the upper triangle
+    fig, ax = plt.subplots(figsize=(16, 8))
+    cmap = sns.diverging_palette(240, 10, n=9, as_cmap=True)                        # colormap
+    sns.heatmap(corr, mask=mask, cmap=cmap, annot=True,
+                vmax=1.0, vmin=-1.0, center=0, square=True,
+                linewidths=0.5, cbar_kws={"shrink": 0.5},
+                annot_kws={"size": 20 / np.sqrt(len(corr))})
+    plt.tight_layout()
+    fig.savefig('Results\CorrelationMatrix.tiff', dpi=300, format='tif')
+    return fig
+
 if __name__ == '__main__':
 
     # load prepared data
     excel_file = 'dataset\prepared_data.xlsx'
     df = pd.read_excel(excel_file, header=0, index_col=0)
 
-    # separate data on DataFrames
-    df_target = df.loc[:, df.columns.str.contains('^Исход.*') == True]              # target DataFrame
+    # separating data on DataFrames
+    df_target = df.loc[:, df.columns.str.contains('^Исход.*') == True]              # targets DataFrame
     # df_target = df.loc[:, df.columns.str.contains('Вид.*') == True]
 
-    binary_cols = df[df.columns].isin([0, 1]).all()
+    binary_cols = df.isin([0, 1]).all()                                             # predictors binary DataFrame
     df_binary = df[binary_cols[binary_cols].index]
-    df_binary = df_binary.drop(df_target.columns, axis=1)                           # predictors binary DataFrame
+    df_binary = df_binary.drop(df_target.columns, axis=1)
 
-    # TODO: add some int to float data
-    df_float = df.select_dtypes(include=[float])                                    # predictors float DataFrame
-    df_float = df.select_dtypes(include=[int])
+    float_mask = df.isin([0, 1]).all() == False                                     # predictors float DataFrame
+    df_float = df[float_mask[float_mask].index].astype(np.float64)
 
-    print(pd.Series(df_float.columns))
+    df_predicts = df.drop(df_target.columns, axis=1)                                # all predictors DataFrame
 
-
+    '''
     # Fisher ODDS ratio calculation
     fisher_ODDS_ratio(df_target, df_binary)
+
+    # Mutual information data scores
+    for target in df_target:
+        print('\nScore:', target)
+        mi_scores = mutual_information(df_predicts, df_target[target])
+        print(mi_scores.head(5))
+        
+    # Correlation check
+    cor_plot(df_float)
+    '''
+
 
