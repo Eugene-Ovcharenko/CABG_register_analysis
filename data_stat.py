@@ -110,7 +110,6 @@ if __name__ == '__main__':
 
     df_predicts = df.drop(df_target.columns, axis=1)                                # all predictors DataFrame
 
-    '''
     # Fisher ODDS ratio calculation
     fisher_ODDS_ratio(df_target, df_binary)
 
@@ -122,6 +121,6 @@ if __name__ == '__main__':
         
     # Correlation check
     cor_plot(df_float)
-    '''
+
 
 
