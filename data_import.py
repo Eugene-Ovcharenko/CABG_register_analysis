@@ -41,10 +41,11 @@ if __name__ == '__main__':
     excel_file = 'dataset/dataset.xlsx'
     excel_sheet = 'Sum'
     index_col = 0
-    header = [0, 1, 2]
+    header = [0]                                                                    # [0, 1, 2]
 
     # data loading
-    df = data_load(excel_file, excel_sheet, index_col, header)
+    # df = data_load(excel_file, excel_sheet, index_col, header)
+    df = pd.read_excel(excel_file, sheet_name='Sum', header=header, index_col=index_col)
     data_list = pd.Series(df.columns)
 
     # replace string values for num 1|0
@@ -61,7 +62,7 @@ if __name__ == '__main__':
     categorical_cols = [col for col in df.columns if df[col].dtype == "object"]
     object_nunique = list(map(lambda col: df[col].nunique(), categorical_cols))
     print('The number of unique entries in each column with categorical data:')
-    print(pd.Series(dict(zip(categorical_cols, object_nunique))),'\n')
+    # print(pd.Series(dict(zip(categorical_cols, object_nunique))),'\n')
 
     # categorical_cols.extend(spec_categ_cols)
     # df_categ_labeled = pd.get_dummies(df[categorical_cols])                       # encoding categorical columns
@@ -89,8 +90,8 @@ if __name__ == '__main__':
     drop_cals = binary_disbalace[(binary_disbalace < 0.10) |
                                  (binary_disbalace > 0.90)].index                   # drop data outside 10-90%
     drop_cals = list(drop_cals)
-    drop_cals.remove('Пред. |Общ.|Пол')                                             # save a specific element
-    drop_cals.remove('Пред. |ФР ССЗ|АГ')                                            # save a specific element
+    # drop_cals.remove('Пред. |Общ.|Пол')                                             # save a specific element
+    # drop_cals.remove('Пред. |ФР ССЗ|АГ')                                            # save a specific element
     df.drop(drop_cals, axis=1, inplace=True)
 
     # check the remained data
@@ -105,8 +106,13 @@ if __name__ == '__main__':
     float_cols_lst = list(df.dtypes[df.dtypes == 'float64'].index)
     df[float_cols_lst] = df[float_cols_lst].fillna(df[float_cols_lst].mean(), axis=0)
 
+    # drop correlated predictors with float type
+    print('float columns list:\n', pd.Series(float_cols_lst))
+    df.drop(['Интраоп Время пережатия аорты', 'Интраоп T-тела', 'Интраоп Количество КП'], axis=1,  inplace=True)
+
     # save prepared data to excel
     df.to_excel("dataset/prepared_data.xlsx", sheet_name='prepared_data')
+
 
 
 

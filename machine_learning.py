@@ -1,3 +1,5 @@
+from os.path import exists
+import xlsxwriter
 import scipy
 import numpy as np
 import pandas as pd
@@ -5,6 +7,8 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 
 from sklearn import svm
+from sklearn import tree
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import auc
 from sklearn.metrics import RocCurveDisplay
 from sklearn.model_selection import StratifiedKFold
@@ -14,18 +18,65 @@ from sklearn.linear_model import LogisticRegression
 from sklearn import metrics
 
 import json
-# import wandb
-# wandb.init(project="CABG-register-project")
 
 
-def get_divisors(n):
-    divisors = []
-    for m in range(1, n+1):
-        if n % m == 0:
-            divisors.append(m)
-    return divisors
+# Save regression coefficients to JSON ---------------------------------------------------------------------------------
+def reg_coef_export(model, metric):
+    model_param = {}
+    model_param['coef'] = (model.coef_).tolist()
+    model_param['intercept'] = (model.intercept_).tolist()
+    file_name = 'results\\' + str(model.__class__.__name__) + '_AUC_' + str(metric) + '.json'
+    json_txt = json.dumps(model_param, indent=4)
+    with open(file_name, 'w') as file:
+        file.write(json_txt)
+    return 0
 
-# ROC and AUC calculation function for cv data classification
+# Export models configuration and metrics to excel ---------------------------------------------------------------------
+def export_results(cv, model, metrics):
+    file = 'results\\training.xlsx'                                                     # Results file name & path
+
+    export_groups = {}                                                                  # Load results in dictionary
+    for key in metrics:
+        export_groups[key] = round(metrics[key], 3)                                     # round metrics
+    export_groups['Model'] = model.__class__.__name__
+    export_groups['CV'] = cv
+    exprt = pd.concat([pd.Series(export_groups),                                        # concat model params
+                       pd.Series(model.get_params(deep=True))],
+                      axis=0)
+    exprt = exprt.replace(np.nan, '_None_')                                             # replace certain params states
+    exprt = exprt.replace(False, '_False_')
+    exprt = exprt.replace(True, '_True_')
+
+    if exists(file) == False:                                                           # create if file doesn't exist
+        with pd.ExcelWriter(file, engine='xlsxwriter') as writer:
+            exprt.to_excel(writer, sheet_name='Results', header=False, startcol=0, startrow=0)
+
+    imprt = pd.read_excel(file, index_col=0, header=None)                               # import stored results
+
+    if set(exprt.index).issubset(imprt.index):                                          # check for new rows in results
+        write_restriction = []                                                          # flags for rewrite permission
+        for col in imprt.columns:
+            compare = []                                                                # compare each row for novelty:
+            for idx in exprt.index:
+                if isinstance(exprt.loc[idx], (int, float, complex)) \
+                        and not isinstance(exprt.loc[idx], bool):                       # - compare values
+                    compare.append(exprt.loc[idx] == imprt[col].loc[idx])
+                else:
+                    compare.append(str(exprt.loc[idx]) == str(imprt[col].loc[idx]))     # - compare strings
+            write_restriction.append(all(compare))                                      # set flags for write permission
+    else:
+        write_restriction = [False]                                                     # flag is F if newlines
+
+    if any(write_restriction) is False:                                                 # rewrite if all flags are F
+        exprt = pd.concat([imprt, exprt], axis=1, join="outer")                         # concat existing & new results
+        with pd.ExcelWriter(file, engine='xlsxwriter') as writer:
+            exprt.to_excel(writer, sheet_name='Results', header=False, startcol=0, startrow=0, na_rep='')
+            writer.sheets['Results'].set_column(0, 0, 30)
+            writer.sheets['Results'].set_column(1, 1000, 20)
+
+    return 0
+
+# ROC curves & AUC assessment function based for multiple CV folds of data classification-------------------------------
 def roc_auc(X, y, cv, classifier):
     tprs = []
     aucs = []
@@ -57,7 +108,7 @@ def roc_auc(X, y, cv, classifier):
     ax.fill_between(mean_fpr, tprs_lower, tprs_upper,
                     color="grey", alpha=0.2, label=r"0.95 CI"
                     )
-    ax.set(xlim=[0, 1.05], ylim=[0, 1.05],                                               # plot prop
+    ax.set(xlim=[0, 1.05], ylim=[0, 1.05],                                              # plot prop
            title="Receiver operating characteristic curve")
     ax.legend(loc="lower right")
     # plt.show()
@@ -91,31 +142,28 @@ if __name__ == '__main__':
 
     # Machine learning
     X = np.array(df_predicts)                                                           # X&y DATA define
-    y = np.array(df_target.iloc[:, -1])
+    y = np.array(df_target.iloc[:, -2])
 
+    # Machine learning: CV ROC assessment
     cv = StratifiedKFold(n_splits=5, random_state=None)                                 # Number of Folds
 
-    classifiers = {LogisticRegression(max_iter=10000, solver='newton-cg'),
-                   LogisticRegression(max_iter=10000, solver ='liblinear')
-                   #svm.SVC(kernel="linear", probability=True, random_state=42)
+    classifiers = {# LogisticRegression(max_iter=10000, solver='newton-cg'),
+                   LogisticRegression(max_iter=10000, solver ='liblinear'),
+                   # svm.SVC(kernel="linear", probability=True, random_state=42),
+                   tree.DecisionTreeClassifier(random_state=0),
+                   # RandomForestClassifier(random_state=0)
                    }
-
 
     for classifier in classifiers:
         print('Classifier model \33[32m{}\033[0m with the following parameters:\n{}'
               .format(classifier, classifier.get_params()))
-
         metric_auc = roc_auc(X, y, cv, classifier)
         print('AUC: \033[91m{0:.3f}\033[00m'.format(metric_auc))
 
-        model_param = {}                                                                # Save the model to JSON
-        model_param['coef'] = (classifier.coef_).tolist()
-        model_param['intercept'] = (classifier.intercept_).tolist()
-        file_name = 'results\\' + str(classifier).split('(')[0] + '_AUC_' + str(metric_auc) + '.json'
-        print(file_name)
-        json_txt = json.dumps(model_param, indent=4)
-        with open(file_name, 'w') as file:
-            file.write(json_txt)
+        if classifier.__class__.__name__ == 'LogisticRegression':
+            reg_coef_export(classifier, metric_auc)
+        metrics = {'AUC_ROC': metric_auc}
+        export_results (cv, classifier, metrics)
 
 
 
@@ -124,17 +172,14 @@ if __name__ == '__main__':
 
 
 
-        # wandb.config = {
-        #     "learning_rate": 0.001,
-        #     "epochs": 100,
-        #     "batch_size": 128
-        # }
-        # wandb.log({"auc": auc})
+
+
+
+
+
 
 
     # TODO: wandb ?
-
-
 
     # TODO: K-Nearest Neighbors Classification
     # TODO: Decision Trees
