@@ -1,24 +1,49 @@
 from os.path import exists
-import xlsxwriter
-import scipy
 import numpy as np
 import pandas as pd
-import seaborn as sns
 import matplotlib.pyplot as plt
+import seaborn as sns
+import xlsxwriter
+import scipy
+import json
 
+from sklearn.experimental import enable_halving_search_cv
+from sklearn.model_selection import HalvingRandomSearchCV
+from sklearn.experimental import enable_halving_search_cv
+from sklearn.model_selection import HalvingGridSearchCV
+from sklearn.model_selection import StratifiedKFold
+
+
+from sklearn.metrics import auc
+from sklearn.metrics import RocCurveDisplay
+
+from sklearn.linear_model import LogisticRegression
 from sklearn import svm
 from sklearn import tree
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.metrics import auc
-from sklearn.metrics import RocCurveDisplay
-from sklearn.model_selection import StratifiedKFold
-from sklearn.model_selection import train_test_split
-from sklearn.multioutput import MultiOutputClassifier
-from sklearn.linear_model import LogisticRegression
-from sklearn import metrics
 
-import json
+# Plot of halving search scores of candidates over iterations function -------------------------------------------------
+def halving_search_vis(search):
+    results = pd.DataFrame(search.cv_results_)
+    results["params_str"] = results.params.apply(str)
+    results.drop_duplicates(subset=("params_str", "iter"), inplace=True)
+    mean_scores = results.pivot(
+        index="iter", columns="params_str", values="mean_test_score"
+    )
+    ax = mean_scores.plot(legend=False, alpha=0.6)
 
+    labels = [
+        f"iter={i}\nn_samples={search.n_resources_[i]}\nn_candidates={search.n_candidates_[i]}"
+        for i in range(search.n_iterations_)
+    ]
+    ax.set_xticks(range(search.n_iterations_))
+    ax.set_xticklabels(labels, rotation=45, multialignment="left")
+    ax.set_title("Scores of candidates over iterations")
+    ax.set_ylabel("mean test score", fontsize=15)
+    ax.set_xlabel("iterations", fontsize=15)
+    plt.tight_layout()
+    plt.show()
+    return 0
 
 # Save regression coefficients to JSON ---------------------------------------------------------------------------------
 def reg_coef_export(model, metric):
@@ -33,8 +58,6 @@ def reg_coef_export(model, metric):
 
 # Export models configuration and metrics to excel ---------------------------------------------------------------------
 def export_results(cv, model, metrics):
-    file = 'results\\training.xlsx'                                                     # Results file name & path
-
     export_groups = {}                                                                  # Load results in dictionary
     for key in metrics:
         export_groups[key] = round(metrics[key], 3)                                     # round metrics
@@ -46,6 +69,8 @@ def export_results(cv, model, metrics):
     exprt = exprt.replace(np.nan, '_None_')                                             # replace certain params states
     exprt = exprt.replace(False, '_False_')
     exprt = exprt.replace(True, '_True_')
+
+    file = 'results\\train_' + str(model.__class__.__name__) + '.xlsx'                  # Results file name & path
 
     if exists(file) == False:                                                           # create if file doesn't exist
         with pd.ExcelWriter(file, engine='xlsxwriter') as writer:
@@ -143,28 +168,72 @@ if __name__ == '__main__':
     # Machine learning
     X = np.array(df_predicts)                                                           # X&y DATA define
     y = np.array(df_target.iloc[:, -2])
+    # TODO: export x, y shapes and comments
+
+
+
+    # TODO: Halving Random Search CV
+    classifier = tree.DecisionTreeClassifier(random_state=0)
+    param_distributions = {'criterion' : ["gini", "entropy", "log_loss"],
+                           'splitter': ["best"],
+                           'max_depth': [ None, 2, 3, 5, 10, 20, 30, 50],
+                           'min_samples_split': [2, 3, 5, 10, 20],
+                           'min_samples_leaf': [1, 2, 3, 5, 10],
+                           'min_weight_fraction_leaf': [0, 0.1, 0.3, 0.5],
+                           'max_features': [None, "sqrt", "log2"],
+                           'random_state': [0],
+                           'max_leaf_nodes': [None, 2, 5, 10, 20, 50],
+                           'min_impurity_decrease': [0.0],
+                           'class_weight': [None, "balanced"],
+                           'ccp_alpha': [0, 0.1, 0.3]
+                          }
+    search = HalvingRandomSearchCV(classifier,
+                                   param_distributions,
+                                   cv=5,
+                                   factor=1.5,
+                                   n_candidates=10,
+                                   scoring='roc_auc',
+                                   return_train_score=False,
+                                   aggressive_elimination=False,
+                                   random_state=0,
+                                   n_jobs=-1,
+                                   verbose=1
+                                   ).fit(X, y)
+
+    score = search.best_score_
+    print('Model: \33[32m{}\033[0m'.format(classifier.__class__.__name__))
+    print(search.scoring, 'SCORE: \033[91m{0:.3f}\033[00m'.format(score))
+
+    best_params = search.best_params_
+    classifier.set_params(**best_params)
+    metrics = {search.scoring: score}
+    export_results('cv=5', classifier, metrics)
+    print(best_params)
+
+    # halving_search_vis(search)
+
+
+
 
     # Machine learning: CV ROC assessment
-    cv = StratifiedKFold(n_splits=5, random_state=None)                                 # Number of Folds
-
-    classifiers = {# LogisticRegression(max_iter=10000, solver='newton-cg'),
-                   LogisticRegression(max_iter=10000, solver ='liblinear'),
-                   # svm.SVC(kernel="linear", probability=True, random_state=42),
-                   tree.DecisionTreeClassifier(random_state=0),
-                   # RandomForestClassifier(random_state=0)
-                   }
-
-    for classifier in classifiers:
-        print('Classifier model \33[32m{}\033[0m with the following parameters:\n{}'
-              .format(classifier, classifier.get_params()))
-        metric_auc = roc_auc(X, y, cv, classifier)
-        print('AUC: \033[91m{0:.3f}\033[00m'.format(metric_auc))
-
-        if classifier.__class__.__name__ == 'LogisticRegression':
-            reg_coef_export(classifier, metric_auc)
-        metrics = {'AUC_ROC': metric_auc}
-        export_results (cv, classifier, metrics)
-
+    # cv = StratifiedKFold(n_splits=5, random_state=None)                                 # Number of Folds
+    # classifiers = {LogisticRegression(max_iter=10000, solver='newton-cg'),
+    #                LogisticRegression(max_iter=10000, solver ='liblinear'),
+    #                # svm.SVC(kernel="linear", probability=True, random_state=42),
+    #                # tree.DecisionTreeClassifier(random_state=0),
+    #                # tree.DecisionTreeClassifier(random_state=1),
+    #                # RandomForestClassifier(random_state=0)
+    #                }
+    # for classifier in classifiers:
+    #     print('Classifier model \33[32m{}\033[0m with the following parameters:\n{}'
+    #           .format(classifier, classifier.get_params()))
+    #     metric_auc = roc_auc(X, y, cv, classifier)
+    #     print('AUC: \033[91m{0:.3f}\033[00m'.format(metric_auc))
+    #
+    #     metrics = {'AUC_ROC': metric_auc}
+    #     export_results (cv, classifier, metrics)
+    #     if classifier.__class__.__name__ == 'LogisticRegression':
+    #         reg_coef_export(classifier, metric_auc)
 
 
 
