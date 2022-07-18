@@ -1,4 +1,5 @@
 from os.path import exists
+from time import time
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -7,6 +8,8 @@ import xlsxwriter
 import scipy
 import json
 
+from sklearn.model_selection import GridSearchCV
+from sklearn.model_selection import RandomizedSearchCV
 from sklearn.experimental import enable_halving_search_cv
 from sklearn.model_selection import HalvingRandomSearchCV
 from sklearn.experimental import enable_halving_search_cv
@@ -19,8 +22,61 @@ from sklearn.metrics import RocCurveDisplay
 
 from sklearn.linear_model import LogisticRegression
 from sklearn import svm
-from sklearn import tree
-from sklearn.ensemble import RandomForestClassifier
+from models import decision_tree
+from models import random_forest
+
+# Random Search CV function --------------------------------------------------------------------------------------------
+def random_search_cv(classifier, param_distributions, cv=5, scoring='roc_auc'):
+    start = time()
+    search = RandomizedSearchCV(classifier,
+                                   param_distributions,
+                                   cv=cv,
+                                   n_iter = 20,
+                                   scoring=scoring,
+                                   return_train_score=False,
+                                   random_state=None,
+                                   n_jobs=-1,
+                                   verbose=1
+                                   ).fit(X, y)
+
+    score = search.best_score_
+    print('Model: \33[32m{}\033[0m'.format(classifier.__class__.__name__))
+    print(search.scoring, 'SCORE: \033[91m{0:.3f}\033[00m'.format(score))
+    print('Time: {0:.2f} seconds'.format(time() - start))
+    best_params = search.best_params_
+    print(best_params)
+    classifier.set_params(**best_params)
+    metrics = {search.scoring: score}
+    _cv = 'cv=' + str(search.cv)
+    return _cv, classifier, metrics
+
+# Halving search CV function -------------------------------------------------------------------------------------------
+def halving_search_cv(classifier, param_distributions, cv=5, scoring='roc_auc'):
+    start = time()
+    search = HalvingRandomSearchCV(classifier,
+                                   param_distributions,
+                                   cv=cv,
+                                   factor=1.5,
+                                   n_candidates=10,
+                                   scoring=scoring,
+                                   return_train_score=False,
+                                   aggressive_elimination=False,
+                                   random_state=False,
+                                   n_jobs=-1,
+                                   verbose=1
+                                   ).fit(X, y)
+
+    score = search.best_score_
+    print('Model: \33[32m{}\033[0m'.format(classifier.__class__.__name__))
+    print(search.scoring, 'SCORE: \033[91m{0:.3f}\033[00m'.format(score))
+    print('Time: {0:.2f} seconds'.format(time() - start))
+    best_params = search.best_params_
+    classifier.set_params(**best_params)
+    metrics = {search.scoring: score}
+    print(best_params)
+    _cv ='cv=' + str(search.cv)
+    halving_search_vis(search)
+    return _cv, classifier, metrics
 
 # Plot of halving search scores of candidates over iterations function -------------------------------------------------
 def halving_search_vis(search):
@@ -67,6 +123,8 @@ def export_results(cv, model, metrics):
                        pd.Series(model.get_params(deep=True))],
                       axis=0)
     exprt = exprt.replace(np.nan, '_None_')                                             # replace certain params states
+    exprt = exprt.replace(0, '0')
+    exprt = exprt.replace(1, '1')
     exprt = exprt.replace(False, '_False_')
     exprt = exprt.replace(True, '_True_')
 
@@ -170,52 +228,32 @@ if __name__ == '__main__':
     y = np.array(df_target.iloc[:, -2])
     # TODO: export x, y shapes and comments
 
+    # Halving Random Search CV
+    '''
+    classifier, param_distributions = decision_tree()
+    _cv, classifier, metrics = halving_search_cv(classifier,
+                                                  param_distributions,
+                                                  cv=5, scoring='roc_auc')
+    export_results(_cv, classifier, metrics)
+    '''
+    # Random Search CV
+    #classifier, param_distributions = decision_tree()
+    classifier, param_distributions = random_forest()
 
-
-    # TODO: Halving Random Search CV
-    classifier = tree.DecisionTreeClassifier(random_state=0)
-    param_distributions = {'criterion' : ["gini", "entropy", "log_loss"],
-                           'splitter': ["best"],
-                           'max_depth': [ None, 2, 3, 5, 10, 20, 30, 50],
-                           'min_samples_split': [2, 3, 5, 10, 20],
-                           'min_samples_leaf': [1, 2, 3, 5, 10],
-                           'min_weight_fraction_leaf': [0, 0.1, 0.3, 0.5],
-                           'max_features': [None, "sqrt", "log2"],
-                           'random_state': [0],
-                           'max_leaf_nodes': [None, 2, 5, 10, 20, 50],
-                           'min_impurity_decrease': [0.0],
-                           'class_weight': [None, "balanced"],
-                           'ccp_alpha': [0, 0.1, 0.3]
-                          }
-    search = HalvingRandomSearchCV(classifier,
-                                   param_distributions,
-                                   cv=5,
-                                   factor=1.5,
-                                   n_candidates=10,
-                                   scoring='roc_auc',
-                                   return_train_score=False,
-                                   aggressive_elimination=False,
-                                   random_state=0,
-                                   n_jobs=-1,
-                                   verbose=1
-                                   ).fit(X, y)
-
-    score = search.best_score_
-    print('Model: \33[32m{}\033[0m'.format(classifier.__class__.__name__))
-    print(search.scoring, 'SCORE: \033[91m{0:.3f}\033[00m'.format(score))
-
-    best_params = search.best_params_
-    classifier.set_params(**best_params)
-    metrics = {search.scoring: score}
-    export_results('cv=5', classifier, metrics)
-    print(best_params)
-
-    # halving_search_vis(search)
-
+    bst=[]
+    for i in range(10):
+        _cv, classifier, metrics = random_search_cv(classifier,
+                                                    param_distributions,
+                                                    cv=5, scoring='roc_auc')
+        bst.append(metrics['roc_auc'])
+        if metrics['roc_auc'] >= 0.70:
+            export_results(_cv, classifier, metrics)
+    print(max(bst))
 
 
 
     # Machine learning: CV ROC assessment
+    '''
     # cv = StratifiedKFold(n_splits=5, random_state=None)                                 # Number of Folds
     # classifiers = {LogisticRegression(max_iter=10000, solver='newton-cg'),
     #                LogisticRegression(max_iter=10000, solver ='liblinear'),
@@ -234,6 +272,7 @@ if __name__ == '__main__':
     #     export_results (cv, classifier, metrics)
     #     if classifier.__class__.__name__ == 'LogisticRegression':
     #         reg_coef_export(classifier, metric_auc)
+    '''
 
 
 
@@ -246,12 +285,7 @@ if __name__ == '__main__':
 
 
 
-
-
-    # TODO: wandb ?
-
-    # TODO: K-Nearest Neighbors Classification
-    # TODO: Decision Trees
     # TODO: RandomForestClassifier
+    # TODO: K-Nearest Neighbors Classification
     # TODO: Perceptron
     # TODO: Multi-layer Perceptron ?
