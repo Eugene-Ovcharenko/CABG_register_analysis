@@ -25,6 +25,8 @@ from sklearn import svm
 from models import decision_tree
 from models import random_forest
 from models import k_near_neighbors
+from models import perceptron
+from models import multi_layer_perceptron
 
 # Random Search CV function --------------------------------------------------------------------------------------------
 def random_search_cv(classifier, param_distributions, cv=5, scoring='roc_auc'):
@@ -195,7 +197,7 @@ def roc_auc(X, y, cv, classifier):
     ax.set(xlim=[0, 1.05], ylim=[0, 1.05],                                              # plot prop
            title="Receiver operating characteristic curve")
     ax.legend(loc="lower right")
-    # plt.show()
+    plt.show()
 
     # TODO: tune legend
     # TODO: save fig wit name
@@ -238,24 +240,27 @@ if __name__ == '__main__':
     export_results(_cv, classifier, metrics)
     '''
     # Random Search CV
-    models = (random_forest(),
-              #decision_tree()
+    models = (# random_forest(),
+              # decision_tree(),
+              # perceptron(),
+              multi_layer_perceptron(),
               )
 
     for model in models:
+        print(model)
         # classifier, param_distributions = decision_tree()
         # classifier, param_distributions = random_forest()
         classifier, param_distributions = model
 
 
         bst=[]
-        for i in range(1000):
+        for i in range(10):
             _cv, classifier, metrics = random_search_cv(classifier,
                                                         param_distributions,
                                                         cv=5, scoring='roc_auc')
             bst.append(metrics['roc_auc'])
             print(i)
-            if metrics['roc_auc'] >= 0.70:
+            if metrics['roc_auc'] >= 0.69:
                 export_results(_cv, classifier, metrics)
         print('BEST SCORE: ', max(bst))
 
