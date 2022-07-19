@@ -24,6 +24,7 @@ from sklearn.linear_model import LogisticRegression
 from sklearn import svm
 from models import decision_tree
 from models import random_forest
+from models import k_near_neighbors
 
 # Random Search CV function --------------------------------------------------------------------------------------------
 def random_search_cv(classifier, param_distributions, cv=5, scoring='roc_auc'):
@@ -237,18 +238,26 @@ if __name__ == '__main__':
     export_results(_cv, classifier, metrics)
     '''
     # Random Search CV
-    #classifier, param_distributions = decision_tree()
-    classifier, param_distributions = random_forest()
+    models = (random_forest(),
+              #decision_tree()
+              )
 
-    bst=[]
-    for i in range(10):
-        _cv, classifier, metrics = random_search_cv(classifier,
-                                                    param_distributions,
-                                                    cv=5, scoring='roc_auc')
-        bst.append(metrics['roc_auc'])
-        if metrics['roc_auc'] >= 0.70:
-            export_results(_cv, classifier, metrics)
-    print(max(bst))
+    for model in models:
+        # classifier, param_distributions = decision_tree()
+        # classifier, param_distributions = random_forest()
+        classifier, param_distributions = model
+
+
+        bst=[]
+        for i in range(1000):
+            _cv, classifier, metrics = random_search_cv(classifier,
+                                                        param_distributions,
+                                                        cv=5, scoring='roc_auc')
+            bst.append(metrics['roc_auc'])
+            print(i)
+            if metrics['roc_auc'] >= 0.70:
+                export_results(_cv, classifier, metrics)
+        print('BEST SCORE: ', max(bst))
 
 
 

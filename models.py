@@ -1,5 +1,7 @@
 from sklearn.tree import DecisionTreeClassifier
 from sklearn.ensemble import RandomForestClassifier
+from sklearn.neighbors import KNeighborsClassifier
+
 
 # Decision Tree Classifier
 def decision_tree():
@@ -19,6 +21,7 @@ def decision_tree():
                            }
     return classifier, param_distributions
 
+
 # Random Forest Classifier
 def random_forest():
     classifier = RandomForestClassifier(random_state=0)
@@ -32,8 +35,19 @@ def random_forest():
                            'random_state': [0],
                            'max_leaf_nodes': [2, 3, 4, 5, 6, 7, 8, 9, 10, 20, 30, 40, 50],
                            'min_impurity_decrease': [0.0, 0.1, 0.2, 0.3, 0.4, 0.5],
-                           'bootstrap': [False],
+                           'bootstrap': [True],
                            'class_weight': [None, "balanced"],
                            'ccp_alpha': [0, 0.1, 0.2, 0.3, 0.4, 0.5]
-                          }
+                           }
+    return classifier, param_distributions
+
+
+def k_near_neighbors():
+    classifier = KNeighborsClassifier()
+    param_distributions = {'n_neighbors': [1, 3, 5, 10, 20],
+                           'weights': ["uniform", "distance"],
+                           'algorithm': ["auto", "ball_tree", "kd_tree", "brute"],
+                           'leaf_size': [10, 30, 100, 200],
+                           'p': [1, 2],
+                           }
     return classifier, param_distributions
