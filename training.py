@@ -8,12 +8,11 @@ import xlsxwriter
 import scipy
 import json
 
-from sklearn.model_selection import GridSearchCV
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.experimental import enable_halving_search_cv
 from sklearn.model_selection import HalvingRandomSearchCV
-from sklearn.experimental import enable_halving_search_cv
-from sklearn.model_selection import HalvingGridSearchCV
+
+
 from sklearn.model_selection import StratifiedKFold
 
 
@@ -22,25 +21,32 @@ from sklearn.metrics import RocCurveDisplay
 
 from sklearn.linear_model import LogisticRegression
 from sklearn import svm
-from models import decision_tree
-from models import random_forest
-from models import k_near_neighbors
-from models import perceptron
-from models import multi_layer_perceptron
+
+from models import decision_tree_cl
+from models import random_forest_cl
+from models import skl_knn_cl
+from models import skl_perceptron_cl
+from models import skl_mlp_cl
+from models import skl_ada_boost_cl
+from models import skl_bagging_cl
+from models import skl_gb_cl
+from models import xg_boost
+from models import catboost_cl
+from models import lightgbm_cl
 
 # Random Search CV function --------------------------------------------------------------------------------------------
 def random_search_cv(classifier, param_distributions, cv=5, scoring='roc_auc'):
     start = time()
     search = RandomizedSearchCV(classifier,
-                                   param_distributions,
-                                   cv=cv,
-                                   n_iter = 20,
-                                   scoring=scoring,
-                                   return_train_score=False,
-                                   random_state=None,
-                                   n_jobs=-1,
-                                   verbose=1
-                                   ).fit(X, y)
+                                param_distributions,
+                                cv=cv,
+                                n_iter = 20,
+                                scoring=scoring,
+                                return_train_score=False,
+                                random_state=None,
+                                n_jobs=-1,
+                                verbose=1
+                                ).fit(X, y)
 
     score = search.best_score_
     print('Model: \33[32m{}\033[0m'.format(classifier.__class__.__name__))
@@ -117,6 +123,7 @@ def reg_coef_export(model, metric):
 
 # Export models configuration and metrics to excel ---------------------------------------------------------------------
 def export_results(cv, model, metrics):
+    # TODO: if exist results folder
     export_groups = {}                                                                  # Load results in dictionary
     for key in metrics:
         export_groups[key] = round(metrics[key], 3)                                     # round metrics
@@ -206,7 +213,7 @@ def roc_auc(X, y, cv, classifier):
     return mean_auc
 
 
-
+# Main function ========================================================================================================
 if __name__ == '__main__':
 
     # load prepared data
@@ -239,32 +246,36 @@ if __name__ == '__main__':
                                                   cv=5, scoring='roc_auc')
     export_results(_cv, classifier, metrics)
     '''
-    # Random Search CV
-    models = (# random_forest(),
-              # decision_tree(),
-              # perceptron(),
-              multi_layer_perceptron(),
-              )
+    # Random Search CV -------------------------------------------------------------------------------------------------
+    models = (# random_forest_cl(),
+              # decision_tree_cl(),
+              # skl_perceptron_cl(),
+              # skl_mlp_cl(),
+              # scikit_gb_cl(),
+              # skl_bagging_cl(),
+              # xg_boost(),
+              # lightgbm_cl(),
+              # catboost_cl(),
+              )                                                                        # <- Models for optimization
+
+    rnd_iterations = 100                                                               # Number of cycles of rnd search
 
     for model in models:
-        print(model)
-        # classifier, param_distributions = decision_tree()
-        # classifier, param_distributions = random_forest()
-        classifier, param_distributions = model
-
-
-        bst=[]
-        for i in range(10):
+        classifier, param_distributions = model                                        # reading model's parameters
+        bst=[]                                                                         # list of best scores
+        for i in range(rnd_iterations):
             _cv, classifier, metrics = random_search_cv(classifier,
                                                         param_distributions,
                                                         cv=5, scoring='roc_auc')
             bst.append(metrics['roc_auc'])
-            print(i)
-            if metrics['roc_auc'] >= 0.69:
+            print('Cycle #',i)
+            if metrics['roc_auc'] >= 0.70:
                 export_results(_cv, classifier, metrics)
-        print('BEST SCORE: ', max(bst))
+        print('BEST SCORE of {}: {:.3f}\n'.format(str(classifier.__class__.__name__), bst[0]))
 
 
+    # TODO: Hyperopt
+    # TODO: Optuna
 
     # Machine learning: CV ROC assessment
     '''
@@ -287,19 +298,3 @@ if __name__ == '__main__':
     #     if classifier.__class__.__name__ == 'LogisticRegression':
     #         reg_coef_export(classifier, metric_auc)
     '''
-
-
-
-
-
-
-
-
-
-
-
-
-    # TODO: RandomForestClassifier
-    # TODO: K-Nearest Neighbors Classification
-    # TODO: Perceptron
-    # TODO: Multi-layer Perceptron ?
