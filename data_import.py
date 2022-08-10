@@ -90,8 +90,8 @@ if __name__ == '__main__':
     drop_cals = binary_disbalace[(binary_disbalace < 0.10) |
                                  (binary_disbalace > 0.90)].index                   # drop data outside 10-90%
     drop_cals = list(drop_cals)
-    # drop_cals.remove('Пред. |Общ.|Пол')                                             # save a specific element
-    # drop_cals.remove('Пред. |ФР ССЗ|АГ')                                            # save a specific element
+    # drop_cals.remove('Пред. |Общ.|Пол')                                           # save a specific element
+    # drop_cals.remove('Пред. |ФР ССЗ|АГ')                                          # save a specific element
     df.drop(drop_cals, axis=1, inplace=True)
 
     # check the remained data

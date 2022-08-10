@@ -7,18 +7,14 @@ import seaborn as sns
 import xlsxwriter
 import scipy
 import json
+import os
 
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.experimental import enable_halving_search_cv
 from sklearn.model_selection import HalvingRandomSearchCV
-
-
 from sklearn.model_selection import StratifiedKFold
-
-
 from sklearn.metrics import auc
 from sklearn.metrics import RocCurveDisplay
-
 from sklearn.linear_model import LogisticRegression
 from sklearn import svm
 
@@ -34,6 +30,7 @@ from models import xg_boost
 from models import catboost_cl
 from models import lightgbm_cl
 
+
 # Random Search CV function --------------------------------------------------------------------------------------------
 def random_search_cv(classifier, param_distributions, cv=5, scoring='roc_auc'):
     start = time()
@@ -45,19 +42,21 @@ def random_search_cv(classifier, param_distributions, cv=5, scoring='roc_auc'):
                                 return_train_score=False,
                                 random_state=None,
                                 n_jobs=-1,
-                                verbose=1
+                                verbose=0
                                 ).fit(X, y)
 
     score = search.best_score_
     print('Model: \33[32m{}\033[0m'.format(classifier.__class__.__name__))
     print(search.scoring, 'SCORE: \033[91m{0:.3f}\033[00m'.format(score))
-    print('Time: {0:.2f} seconds'.format(time() - start))
+    _time = '{0:.2f} s.'.format(time() - start)
+    print('Time:', _time)
     best_params = search.best_params_
-    print(best_params)
+    # print(best_params)
     classifier.set_params(**best_params)
     metrics = {search.scoring: score}
     _cv = 'cv=' + str(search.cv)
-    return _cv, classifier, metrics
+    return _cv, classifier, metrics, _time
+
 
 # Halving search CV function -------------------------------------------------------------------------------------------
 def halving_search_cv(classifier, param_distributions, cv=5, scoring='roc_auc'):
@@ -87,6 +86,7 @@ def halving_search_cv(classifier, param_distributions, cv=5, scoring='roc_auc'):
     halving_search_vis(search)
     return _cv, classifier, metrics
 
+
 # Plot of halving search scores of candidates over iterations function -------------------------------------------------
 def halving_search_vis(search):
     results = pd.DataFrame(search.cv_results_)
@@ -110,6 +110,7 @@ def halving_search_vis(search):
     plt.show()
     return 0
 
+
 # Save regression coefficients to JSON ---------------------------------------------------------------------------------
 def reg_coef_export(model, metric):
     model_param = {}
@@ -121,13 +122,21 @@ def reg_coef_export(model, metric):
         file.write(json_txt)
     return 0
 
+
 # Export models configuration and metrics to excel ---------------------------------------------------------------------
-def export_results(cv, model, metrics):
-    # TODO: if exist results folder
-    export_groups = {}                                                                  # Load results in dictionary
+def export_results(target_name, X, cv, model, metrics, _time):
+    path = 'results'                                                                    # check(create) "result" folder
+    isExist = os.path.exists(path)
+    if not isExist:
+        os.makedirs(path)
+
+    export_groups = {}                                                                  # Save results in dictionary
+    export_groups['TARGET'] = target_name
+    export_groups['DATA'] = X.shape
+    export_groups['Model'] = model.__class__.__name__
+    export_groups['Time'] = _time
     for key in metrics:
         export_groups[key] = round(metrics[key], 3)                                     # round metrics
-    export_groups['Model'] = model.__class__.__name__
     export_groups['CV'] = cv
     exprt = pd.concat([pd.Series(export_groups),                                        # concat model params
                        pd.Series(model.get_params(deep=True))],
@@ -140,7 +149,7 @@ def export_results(cv, model, metrics):
 
     file = 'results\\train_' + str(model.__class__.__name__) + '.xlsx'                  # Results file name & path
 
-    if exists(file) == False:                                                           # create if file doesn't exist
+    if exists(file) == False:                                                           # check(create) "result" file
         with pd.ExcelWriter(file, engine='xlsxwriter') as writer:
             exprt.to_excel(writer, sheet_name='Results', header=False, startcol=0, startrow=0)
 
@@ -168,6 +177,7 @@ def export_results(cv, model, metrics):
             writer.sheets['Results'].set_column(1, 1000, 20)
 
     return 0
+
 
 # ROC curves & AUC assessment function based for multiple CV folds of data classification-------------------------------
 def roc_auc(X, y, cv, classifier):
@@ -220,35 +230,24 @@ if __name__ == '__main__':
     excel_file = 'dataset\prepared_data.xlsx'
     df = pd.read_excel(excel_file, header=0, index_col=0)
 
-    # separating data on DataFrames
-    df_target = df.loc[:, df.columns.str.contains('^Исход.*') == True]                  # targets DataFrame
-    # df_target = df.loc[:, df.columns.str.contains('Вид.*') == True]
+    # separating data on DataFrames and set types
+    binary_cols = df.loc[:, df.isin([0, 1]).all()]                                      # select the binary cols only
+    df[binary_cols.columns] = binary_cols.astype(np.uint8, copy=False)                  # predictors binary as uint8
+    non_binary_cols = df.drop(columns=binary_cols.columns, axis=1, inplace=False)       # select non binary cols only
 
-    binary_cols = df.isin([0, 1]).all()                                                 # predictors binary DataFrame
-    df_binary = df[binary_cols[binary_cols].index]
-    df_binary = df_binary.drop(df_target.columns, axis=1)
-
-    float_mask = df.isin([0, 1]).all() == False                                         # predictors float DataFrame
-    df_float = df[float_mask[float_mask].index].astype(np.float64)
-
+    df_target = df.loc[:, df.columns.str.contains('^Исход.*') == True]                  # target DataFrame cols
     df_predicts = df.drop(df_target.columns, axis=1)                                    # all predictors DataFrame
 
     # Machine learning
-    X = np.array(df_predicts)                                                           # X&y DATA define
-    y = np.array(df_target.iloc[:, -2])
-    # TODO: export x, y shapes and comments
+    X = np.array(df_predicts)                                                           # X & y DATA define
+    y = df_target.iloc[:, -2]
+    target_name = y.name
+    y = np.array(y)
+    print('Target:', target_name)
 
-    # Halving Random Search CV
-    '''
-    classifier, param_distributions = decision_tree()
-    _cv, classifier, metrics = halving_search_cv(classifier,
-                                                  param_distributions,
-                                                  cv=5, scoring='roc_auc')
-    export_results(_cv, classifier, metrics)
-    '''
     # Random Search CV -------------------------------------------------------------------------------------------------
     models = (# random_forest_cl(),
-              # decision_tree_cl(),
+              decision_tree_cl(),
               # skl_perceptron_cl(),
               # skl_mlp_cl(),
               # scikit_gb_cl(),
@@ -256,45 +255,79 @@ if __name__ == '__main__':
               # xg_boost(),
               # lightgbm_cl(),
               # catboost_cl(),
-              )                                                                        # <- Models for optimization
+              )                                                                         # <- Models for optimization
 
-    rnd_iterations = 100                                                               # Number of cycles of rnd search
-
+    rnd_iterations = 10                                                                 # Number of cycles of rnd search
     for model in models:
-        classifier, param_distributions = model                                        # reading model's parameters
-        bst=[]                                                                         # list of best scores
-        for i in range(rnd_iterations):
-            _cv, classifier, metrics = random_search_cv(classifier,
+        classifier, param_distributions = model                                         # reading model's parameters
+        bst=[]                                                                          # list of scores
+        for i in range(rnd_iterations):                                                 # cycles of random search
+            print('Cycle #', i)
+            _cv, classifier, metrics, _time = random_search_cv(classifier,
                                                         param_distributions,
-                                                        cv=5, scoring='roc_auc')
+                                                        cv=5, scoring='roc_auc')        # train and test model
             bst.append(metrics['roc_auc'])
-            print('Cycle #',i)
-            if metrics['roc_auc'] >= 0.70:
-                export_results(_cv, classifier, metrics)
-        print('BEST SCORE of {}: {:.3f}\n'.format(str(classifier.__class__.__name__), bst[0]))
+            file = 'results\\train_' + str(classifier.__class__.__name__) + '.xlsx'     # load previous results
+            if exists(file) == False:
+                export_results(target_name, X, _cv, classifier, metrics, _time)         # export results first time
+            else:
+                previous_results = pd.read_excel(file, index_col=0, header=None)        # load previous results
+
+                if metrics['roc_auc'] > previous_results.loc[:,
+                                        previous_results.loc['TARGET']
+                                        == target_name].loc['roc_auc'].max():          # if new better then previous...
+
+                    export_results(target_name, X, _cv, classifier, metrics, _time)     # ...export results
+        print('\33[32m BEST SCORE of {}\033[0m: {:.3f}\n'.format(str(classifier.__class__.__name__), max(bst)))
 
 
-    # TODO: Hyperopt
-    # TODO: Optuna
 
-    # Machine learning: CV ROC assessment
-    '''
-    # cv = StratifiedKFold(n_splits=5, random_state=None)                                 # Number of Folds
-    # classifiers = {LogisticRegression(max_iter=10000, solver='newton-cg'),
-    #                LogisticRegression(max_iter=10000, solver ='liblinear'),
-    #                # svm.SVC(kernel="linear", probability=True, random_state=42),
-    #                # tree.DecisionTreeClassifier(random_state=0),
-    #                # tree.DecisionTreeClassifier(random_state=1),
-    #                # RandomForestClassifier(random_state=0)
-    #                }
-    # for classifier in classifiers:
-    #     print('Classifier model \33[32m{}\033[0m with the following parameters:\n{}'
-    #           .format(classifier, classifier.get_params()))
-    #     metric_auc = roc_auc(X, y, cv, classifier)
-    #     print('AUC: \033[91m{0:.3f}\033[00m'.format(metric_auc))
-    #
-    #     metrics = {'AUC_ROC': metric_auc}
-    #     export_results (cv, classifier, metrics)
-    #     if classifier.__class__.__name__ == 'LogisticRegression':
-    #         reg_coef_export(classifier, metric_auc)
-    '''
+
+
+
+    # TODO: Export ML models
+    # TODO: Variable - importance
+
+    # TODO: 2 Hyperopt
+    # TODO: 2 Optuna
+    # TODO: 3 AutoML
+    # TODO: 4 PSM
+    # TODO: 5 turn off dro data outside 0.10 - 0.90
+
+
+
+
+
+
+
+
+    # Machine learning: CV ROC assessment ------------------------------------------------------------------------------
+    cv = StratifiedKFold(n_splits=5, random_state=None)                                 # Number of Folds
+    classifiers = {#LogisticRegression(max_iter=10000, solver='newton-cg'),
+                   # RandomForestClassifier(bootstrap=True,
+                   #                        random_state=0,
+                   #                        ccp_alpha=0,
+                   #                        class_weight=None,
+                   #                        criterion='entropy',
+                   #                        max_depth=40,
+                   #                        max_features=None,
+                   #                        max_leaf_nodes=50,
+                   #                        max_samples=None,
+                   #                        min_impurity_decrease=0,
+                   #                        min_samples_leaf=8,
+                   #                        min_samples_split=20,
+                   #                        min_weight_fraction_leaf=0.1,
+                   #                        n_estimators=5
+                   #                        )
+                   }
+    for classifier in classifiers:
+        print('Classifier model \33[32m{}\033[0m with the following parameters:\n{}'
+              .format(classifier, classifier.get_params()))
+        metric_auc = roc_auc(X, y, cv, classifier)                                                                          # TODO: must check
+        print('AUC: \033[91m{0:.3f}\033[00m'.format(metric_auc))
+
+        metrics = {'AUC_ROC': metric_auc}
+        export_results (target_name, X, cv, classifier, metrics)
+        # if classifier.__class__.__name__ == 'LogisticRegression':
+        #     reg_coef_export(classifier, metric_auc)
+
