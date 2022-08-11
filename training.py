@@ -8,7 +8,7 @@ import xlsxwriter
 import scipy
 import json
 import os
-
+import pickle
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.experimental import enable_halving_search_cv
 from sklearn.model_selection import HalvingRandomSearchCV
@@ -123,6 +123,28 @@ def reg_coef_export(model, metric):
     return 0
 
 
+# Export ML models & dump data to a pickle file ------------------------------------------------------------------------
+def export_model(model, metrics, df_target, df_predicts):
+    path = 'models'                                                                     # check(create) "models" folder
+    isExist = os.path.exists(path)
+    if not isExist:
+        os.makedirs(path)
+
+    target_name = df_target.name.replace(" ", "_")
+    metrics =[(key + '_'+str(round(metrics[key], 3))) for key in metrics]
+    filebase = 'models\\' + str(target_name) + '_' + str(model.__class__.__name__) + '_' + str(metrics[0])
+    file = filebase + '_model' + '.sav'
+    pickle.dump(model, open(file, 'wb'))                                                # dump model
+
+    file = filebase + '_predicts' + '.sav'
+    df_predicts.to_pickle(file)                                                         # dump predicts ~ X
+
+    file = filebase + '_target' + '.sav'
+    df_target.to_pickle(file)                                                           # dump target ~ y
+
+    return 0
+
+
 # Export models configuration and metrics to excel ---------------------------------------------------------------------
 def export_results(target_name, X, cv, model, metrics, _time):
     path = 'results'                                                                    # check(create) "result" folder
@@ -218,7 +240,7 @@ def roc_auc(X, y, cv, classifier):
 
     # TODO: tune legend
     # TODO: save fig wit name
-    # TODO: save AUC to table
+
 
     return mean_auc
 
@@ -235,29 +257,29 @@ if __name__ == '__main__':
     df[binary_cols.columns] = binary_cols.astype(np.uint8, copy=False)                  # predictors binary as uint8
     non_binary_cols = df.drop(columns=binary_cols.columns, axis=1, inplace=False)       # select non binary cols only
 
-    df_target = df.loc[:, df.columns.str.contains('^Исход.*') == True]                  # target DataFrame cols
-    df_predicts = df.drop(df_target.columns, axis=1)                                    # all predictors DataFrame
+    df_targets = df.loc[:, df.columns.str.contains('^Исход.*') == True]                 # target DataFrame cols
+    df_predicts = df.drop(df_targets.columns, axis=1)                                   # all predictors DataFrame
 
     # Machine learning
-    X = np.array(df_predicts)                                                           # X & y DATA define
-    y = df_target.iloc[:, -2]
-    target_name = y.name
-    y = np.array(y)
+    df_target = df_targets.iloc[:, -2]                                                 # define target
+    target_name = df_target.name
     print('Target:', target_name)
+    X = np.array(df_predicts)
+    y = np.array(df_target)
 
     # Random Search CV -------------------------------------------------------------------------------------------------
-    models = (# random_forest_cl(),
+    models = (random_forest_cl(),
               decision_tree_cl(),
-              # skl_perceptron_cl(),
-              # skl_mlp_cl(),
-              # scikit_gb_cl(),
-              # skl_bagging_cl(),
-              # xg_boost(),
-              # lightgbm_cl(),
-              # catboost_cl(),
+              skl_perceptron_cl(),
+              skl_mlp_cl(),
+              #scikit_gb_cl(),
+              skl_bagging_cl(),
+              xg_boost(),
+              lightgbm_cl(),
+              catboost_cl(),
               )                                                                         # <- Models for optimization
 
-    rnd_iterations = 10                                                                 # Number of cycles of rnd search
+    rnd_iterations = 1000                                                               # Number of cycles of rnd search
     for model in models:
         classifier, param_distributions = model                                         # reading model's parameters
         bst=[]                                                                          # list of scores
@@ -266,6 +288,8 @@ if __name__ == '__main__':
             _cv, classifier, metrics, _time = random_search_cv(classifier,
                                                         param_distributions,
                                                         cv=5, scoring='roc_auc')        # train and test model
+            classifier.fit(X,y)
+
             bst.append(metrics['roc_auc'])
             file = 'results\\train_' + str(classifier.__class__.__name__) + '.xlsx'     # load previous results
             if exists(file) == False:
@@ -275,9 +299,9 @@ if __name__ == '__main__':
 
                 if metrics['roc_auc'] > previous_results.loc[:,
                                         previous_results.loc['TARGET']
-                                        == target_name].loc['roc_auc'].max():          # if new better then previous...
-
-                    export_results(target_name, X, _cv, classifier, metrics, _time)     # ...export results
+                                        == target_name].loc['roc_auc'].max():           # if new better then previous...
+                    export_results(target_name, X, _cv, classifier, metrics, _time)     # ...export results and...
+                    export_model(classifier, metrics, df_target, df_predicts)           # ...store the model
         print('\33[32m BEST SCORE of {}\033[0m: {:.3f}\n'.format(str(classifier.__class__.__name__), max(bst)))
 
 
