@@ -1,13 +1,11 @@
+import os
 from os.path import exists
 from time import time
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
-import xlsxwriter
-import scipy
 import json
-import os
 import pickle
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.experimental import enable_halving_search_cv
@@ -16,7 +14,6 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import auc
 from sklearn.metrics import RocCurveDisplay
 from sklearn.linear_model import LogisticRegression
-from sklearn import svm
 
 from models import decision_tree_cl
 from models import random_forest_cl
@@ -135,10 +132,8 @@ def export_model(model, metrics, df_target, df_predicts):
     filebase = 'models\\' + str(target_name) + '_' + str(model.__class__.__name__) + '_' + str(metrics[0])
     file = filebase + '_model' + '.sav'
     pickle.dump(model, open(file, 'wb'))                                                # dump model
-
     file = filebase + '_predicts' + '.sav'
     df_predicts.to_pickle(file)                                                         # dump predicts ~ X
-
     file = filebase + '_target' + '.sav'
     df_target.to_pickle(file)                                                           # dump target ~ y
 
@@ -205,8 +200,9 @@ def export_results(target_name, X, cv, model, metrics, _time):
 def roc_auc(X, y, cv, classifier):
     tprs = []
     aucs = []
-    mean_fpr = np.linspace(0, 1, 1000)                                                  # ROC cirve resolution
-    fig, ax = plt.subplots(figsize=(16, 8))
+    mean_fpr = np.linspace(0, 1, 10000)                                                 # ROC curve resolution
+
+    fig, ax = plt.subplots(figsize=(10, 5))
     for i, (train, test) in enumerate(cv.split(X, y)):
         classifier.fit(X[train], y[train])
         viz = RocCurveDisplay.from_estimator(classifier, X[test], y[test],
@@ -233,14 +229,13 @@ def roc_auc(X, y, cv, classifier):
     ax.fill_between(mean_fpr, tprs_lower, tprs_upper,
                     color="grey", alpha=0.2, label=r"0.95 CI"
                     )
-    ax.set(xlim=[0, 1.05], ylim=[0, 1.05],                                              # plot prop
-           title="Receiver operating characteristic curve")
+    ax.set(xlim=[0, 1.05], ylim=[0, 1.05])                                              # plot prop
+    title = 'ROC with cross validation for ' + classifier.__class__.__name__ + ' model'
+    ax.set(title=title)
     ax.legend(loc="lower right")
-    plt.show()
-
-    # TODO: tune legend
-    # TODO: save fig wit name
-
+    file = 'results\\ROC_CV_' + classifier.__class__.__name__ \
+           +'_AUC_' + str(round(mean_auc, 3)) + '.tiff'
+    fig.savefig(file, dpi=200)
 
     return mean_auc
 
@@ -268,18 +263,18 @@ if __name__ == '__main__':
     y = np.array(df_target)
 
     # Random Search CV -------------------------------------------------------------------------------------------------
-    models = (random_forest_cl(),
-              decision_tree_cl(),
-              skl_perceptron_cl(),
-              skl_mlp_cl(),
-              #scikit_gb_cl(),
-              skl_bagging_cl(),
-              xg_boost(),
-              lightgbm_cl(),
+    models = (# decision_tree_cl()
+              # random_forest_cl(),
+              # skl_perceptron_cl(),
+              # skl_mlp_cl(),
+              # scikit_gb_cl(),
+              # skl_bagging_cl(),
+              # xg_boost(),
+              # lightgbm_cl(),
               catboost_cl(),
               )                                                                         # <- Models for optimization
 
-    rnd_iterations = 1000                                                               # Number of cycles of rnd search
+    rnd_iterations = 1                                                                  # Number of cycles of rnd search
     for model in models:
         classifier, param_distributions = model                                         # reading model's parameters
         bst=[]                                                                          # list of scores
@@ -297,61 +292,17 @@ if __name__ == '__main__':
             else:
                 previous_results = pd.read_excel(file, index_col=0, header=None)        # load previous results
 
-                if metrics['roc_auc'] > previous_results.loc[:,
+                if metrics['roc_auc'] > 0.01 + previous_results.loc[:,
                                         previous_results.loc['TARGET']
                                         == target_name].loc['roc_auc'].max():           # if new better then previous...
                     export_results(target_name, X, _cv, classifier, metrics, _time)     # ...export results and...
                     export_model(classifier, metrics, df_target, df_predicts)           # ...store the model
+
+                    cv = StratifiedKFold(n_splits=5, random_state=None)
+                    metric_auc = roc_auc(X, y, cv, classifier)
+
         print('\33[32m BEST SCORE of {}\033[0m: {:.3f}\n'.format(str(classifier.__class__.__name__), max(bst)))
-
-
-
-
-
-
-    # TODO: Export ML models
-    # TODO: Variable - importance
 
     # TODO: 2 Hyperopt
     # TODO: 2 Optuna
     # TODO: 3 AutoML
-    # TODO: 4 PSM
-    # TODO: 5 turn off dro data outside 0.10 - 0.90
-
-
-
-
-
-
-
-
-    # Machine learning: CV ROC assessment ------------------------------------------------------------------------------
-    cv = StratifiedKFold(n_splits=5, random_state=None)                                 # Number of Folds
-    classifiers = {#LogisticRegression(max_iter=10000, solver='newton-cg'),
-                   # RandomForestClassifier(bootstrap=True,
-                   #                        random_state=0,
-                   #                        ccp_alpha=0,
-                   #                        class_weight=None,
-                   #                        criterion='entropy',
-                   #                        max_depth=40,
-                   #                        max_features=None,
-                   #                        max_leaf_nodes=50,
-                   #                        max_samples=None,
-                   #                        min_impurity_decrease=0,
-                   #                        min_samples_leaf=8,
-                   #                        min_samples_split=20,
-                   #                        min_weight_fraction_leaf=0.1,
-                   #                        n_estimators=5
-                   #                        )
-                   }
-    for classifier in classifiers:
-        print('Classifier model \33[32m{}\033[0m with the following parameters:\n{}'
-              .format(classifier, classifier.get_params()))
-        metric_auc = roc_auc(X, y, cv, classifier)                                                                          # TODO: must check
-        print('AUC: \033[91m{0:.3f}\033[00m'.format(metric_auc))
-
-        metrics = {'AUC_ROC': metric_auc}
-        export_results (target_name, X, cv, classifier, metrics)
-        # if classifier.__class__.__name__ == 'LogisticRegression':
-        #     reg_coef_export(classifier, metric_auc)
-
