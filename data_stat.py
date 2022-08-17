@@ -122,7 +122,8 @@ if __name__ == '__main__':
     # Correlation check
     cor_plot(df_float)
 
-    # TODO: add plot
-    # TODO: add
-    # TODO: PSM
+    # TODO: add plot for mutual_information
+    # TODO: PSM https://towardsdatascience.com/psmpy-propensity-score-matching-in-python-a3e0cd4d2631
+    #           https://analyticsmayhem.com/digital-analytics/propensity-score-matching-python/
+
 

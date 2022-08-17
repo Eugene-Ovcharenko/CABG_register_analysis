@@ -14,6 +14,8 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import auc
 from sklearn.metrics import RocCurveDisplay
 from sklearn.linear_model import LogisticRegression
+import optuna
+import functools
 
 from models import decision_tree_cl
 from models import random_forest_cl
@@ -28,13 +30,46 @@ from models import catboost_cl
 from models import lightgbm_cl
 
 
+# TODO: optuna optimization function:
+from sklearn.model_selection import cross_val_score
+import xgboost as xgb
+
+def optuna_xgb_clf(X, y, trial):
+
+    n_estimators = trial.suggest_int('n_estimators', 0, 1000)
+    max_depth = trial.suggest_int('max_depth', 1, 20, 50)
+    min_child_weight = trial.suggest_int('min_child_weight', 1, 20, 50)
+    learning_rate = trial.suggest_discrete_uniform('learning_rate', 0.01, 0.1, 0.01)
+    scale_pos_weight = trial.suggest_int('scale_pos_weight', 1, 100)
+    subsample = trial.suggest_discrete_uniform('subsample', 0.5, 0.9, 0.1)
+    colsample_bytree = trial.suggest_discrete_uniform('colsample_bytree', 0.1, 0.5, 0.9)
+
+    classifier = xgb.XGBClassifier(
+        booster = "gbtree",
+        random_state = 42,
+        n_estimators = n_estimators,
+        max_depth = max_depth,
+        min_child_weight = min_child_weight,
+        learning_rate = learning_rate,
+        scale_pos_weight = scale_pos_weight,
+        subsample = subsample,
+        colsample_bytree = colsample_bytree,
+
+    )
+    roc_auc_cv5 = cross_val_score(classifier, X, y, scoring="roc_auc", cv=5).mean()
+
+    return (1.0 - roc_auc_cv5)
+
+
+
+
 # Random Search CV function --------------------------------------------------------------------------------------------
-def random_search_cv(classifier, param_distributions, cv=5, scoring='roc_auc'):
+def random_search_cv(X, y, classifier, param_distributions, cv=5, scoring='roc_auc', n_iter = 1000):
     start = time()
     search = RandomizedSearchCV(classifier,
                                 param_distributions,
                                 cv=cv,
-                                n_iter = 20,
+                                n_iter = n_iter,
                                 scoring=scoring,
                                 return_train_score=False,
                                 random_state=None,
@@ -51,7 +86,7 @@ def random_search_cv(classifier, param_distributions, cv=5, scoring='roc_auc'):
     # print(best_params)
     classifier.set_params(**best_params)
     metrics = {search.scoring: score}
-    _cv = 'cv=' + str(search.cv)
+    _cv = cv
     return _cv, classifier, metrics, _time
 
 
@@ -141,7 +176,7 @@ def export_model(model, metrics, df_target, df_predicts):
 
 
 # Export models configuration and metrics to excel ---------------------------------------------------------------------
-def export_results(target_name, X, cv, model, metrics, _time):
+def export_results(target_name, X, cv, model, metrics, _time, tune_algorithm):
     path = 'results'                                                                    # check(create) "result" folder
     isExist = os.path.exists(path)
     if not isExist:
@@ -151,6 +186,7 @@ def export_results(target_name, X, cv, model, metrics, _time):
     export_groups['TARGET'] = target_name
     export_groups['DATA'] = X.shape
     export_groups['Model'] = model.__class__.__name__
+    export_groups['Tune algorithm'] = tune_algorithm
     export_groups['Time'] = _time
     for key in metrics:
         export_groups[key] = round(metrics[key], 3)                                     # round metrics
@@ -197,10 +233,10 @@ def export_results(target_name, X, cv, model, metrics, _time):
 
 
 # ROC curves & AUC assessment function based for multiple CV folds of data classification-------------------------------
-def roc_auc(X, y, cv, classifier):
+def roc_auc(X, y, cv, classifier, target_name):
     tprs = []
     aucs = []
-    mean_fpr = np.linspace(0, 1, 10000)                                                 # ROC curve resolution
+    mean_fpr = np.linspace(0, 1, 1000)                                                  # ROC curve resolution
 
     fig, ax = plt.subplots(figsize=(10, 5))
     for i, (train, test) in enumerate(cv.split(X, y)):
@@ -230,10 +266,11 @@ def roc_auc(X, y, cv, classifier):
                     color="grey", alpha=0.2, label=r"0.95 CI"
                     )
     ax.set(xlim=[0, 1.05], ylim=[0, 1.05])                                              # plot prop
-    title = 'ROC with cross validation for ' + classifier.__class__.__name__ + ' model'
+    title = 'ROC with cross validation for ' + \
+            classifier.__class__.__name__ + ', target:' + target_name
     ax.set(title=title)
     ax.legend(loc="lower right")
-    file = 'results\\ROC_CV_' + classifier.__class__.__name__ \
+    file = 'results\\ROC_CV_' + target_name + '_' + classifier.__class__.__name__ \
            +'_AUC_' + str(round(mean_auc, 3)) + '.tiff'
     fig.savefig(file, dpi=200)
 
@@ -255,54 +292,129 @@ if __name__ == '__main__':
     df_targets = df.loc[:, df.columns.str.contains('^Исход.*') == True]                 # target DataFrame cols
     df_predicts = df.drop(df_targets.columns, axis=1)                                   # all predictors DataFrame
 
-    # Machine learning
-    df_target = df_targets.iloc[:, -2]                                                 # define target
-    target_name = df_target.name
-    print('Target:', target_name)
-    X = np.array(df_predicts)
-    y = np.array(df_target)
-
     # Random Search CV -------------------------------------------------------------------------------------------------
-    models = (# decision_tree_cl()
-              # random_forest_cl(),
-              # skl_perceptron_cl(),
-              # skl_mlp_cl(),
-              # scikit_gb_cl(),
-              # skl_bagging_cl(),
-              # xg_boost(),
-              # lightgbm_cl(),
-              catboost_cl(),
+    tune_algorithm = 'Random Search CV'
+    models = (decision_tree_cl(),
+              random_forest_cl(),
+              skl_perceptron_cl(),
+              skl_mlp_cl(),
+              skl_gb_cl(),
+              skl_bagging_cl(),
+              xg_boost(),
+              lightgbm_cl(),
+              skl_ada_boost_cl(),
+              skl_knn_cl(),
+              catboost_cl()
               )                                                                         # <- Models for optimization
 
-    rnd_iterations = 1                                                                  # Number of cycles of rnd search
+    rnd_iterations = 0                                                                  # Number of cycles of rnd search
+
+    # train and test each of the model in the loop
     for model in models:
         classifier, param_distributions = model                                         # reading model's parameters
-        bst=[]                                                                          # list of scores
-        for i in range(rnd_iterations):                                                 # cycles of random search
-            print('Cycle #', i)
-            _cv, classifier, metrics, _time = random_search_cv(classifier,
-                                                        param_distributions,
-                                                        cv=5, scoring='roc_auc')        # train and test model
-            classifier.fit(X,y)
 
-            bst.append(metrics['roc_auc'])
-            file = 'results\\train_' + str(classifier.__class__.__name__) + '.xlsx'     # load previous results
-            if exists(file) == False:
-                export_results(target_name, X, _cv, classifier, metrics, _time)         # export results first time
-            else:
-                previous_results = pd.read_excel(file, index_col=0, header=None)        # load previous results
+        # define X & y in the loop
+        X = np.array(df_predicts)                                                       # define X (predicts) data
+        for target in df_targets:
+            bst = [0]                                                                   # list of scores
 
-                if metrics['roc_auc'] > 0.01 + previous_results.loc[:,
-                                        previous_results.loc['TARGET']
-                                        == target_name].loc['roc_auc'].max():           # if new better then previous...
-                    export_results(target_name, X, _cv, classifier, metrics, _time)     # ...export results and...
-                    export_model(classifier, metrics, df_target, df_predicts)           # ...store the model
+            print('Target:', target)
+            y = np.array(df_targets[target])                                            # define y (target) data
 
+            for i in range(rnd_iterations):                                             # cycles of random search
+                print('Cycle #', i)
+                _cv, classifier, metrics, _time = random_search_cv(
+                    X, y,
+                    classifier,
+                    param_distributions,
+                    cv=5,
+                    scoring='roc_auc',
+                    n_iter=10000                                                        # iteration number for optimizer
+                )
+                bst.append(metrics['roc_auc'])
+
+                # export results
+                classifier.fit(X,y)                                                     # fit model for dumping
+                file = 'results\\train_' + str(classifier.__class__.__name__) + '.xlsx' # load previous results
+                if exists(file) == False:
+                    export_results(target, X, _cv, classifier,
+                                   metrics, _time, tune_algorithm)                      # export results first time
+                    export_model(classifier, metrics,
+                                 df_targets[target], df_predicts)                       # export model
                     cv = StratifiedKFold(n_splits=5, random_state=None)
-                    metric_auc = roc_auc(X, y, cv, classifier)
+                    metric_auc = roc_auc(X, y, cv, classifier, target)                  # plot ROC CV curve
+                else:
+                    previous_results = pd.read_excel(file, index_col=0, header=None)    # load previous results
+                    if (metrics['roc_auc'] > 0.01 + previous_results.loc[:,
+                        previous_results.loc['TARGET']
+                        == target].loc['roc_auc'].max()) or \
+                        ((previous_results.loc['TARGET'] != target).all()):             # if new model better
 
-        print('\33[32m BEST SCORE of {}\033[0m: {:.3f}\n'.format(str(classifier.__class__.__name__), max(bst)))
+                        export_results(target, X, _cv, classifier,
+                                       metrics, _time, tune_algorithm)                  # then previous results
+                        export_model(classifier, metrics,
+                                     df_targets[target], df_predicts)                   # store model & result
+                        cv = StratifiedKFold(n_splits=5, random_state=None)             # plot ROC CV curve
+                        metric_auc = roc_auc(X, y, cv, classifier, target)
 
-    # TODO: 2 Hyperopt
-    # TODO: 2 Optuna
-    # TODO: 3 AutoML
+            print('\33[32m BEST SCORE of {}\033[0m: {:.3f}\n'.
+                  format(str(classifier.__class__.__name__), max(bst)))
+
+    print('\n+++ Random Search CV work completed successfully +++\n')
+
+
+    # TODO: Optuna:
+    # Optuna model optimizer -------------------------------------------------------------------------------------------
+    tune_algorithm = 'Optuna'
+    X = np.array(df_predicts)                                                           # define X (predicts) data
+
+    for target in df_targets:
+        print('Target:', target)
+        y = np.array(df_targets[target])                                                # define y (target) data
+
+        start = time()
+        study = optuna.create_study(direction='minimize')
+        study.optimize(functools.partial(optuna_xgb_clf, X, y), n_trials=100)            # set number of trials
+
+        classifier = xgb.XGBClassifier(**study.best_trial.params)
+        cv = StratifiedKFold(n_splits=5, random_state=None)                             # plot ROC CV curve
+        metric = roc_auc(X, y, cv, classifier, target)
+        metrics = {'roc_auc': metric}
+        _time = '{0:.2f} s.'.format(time() - start)
+
+        print('Model: \33[32m{}\033[0m'.format(classifier.__class__.__name__))
+        print('roc_auc', 'SCORE: \033[91m{0:.3f}\033[00m'.format(metric))
+        print('Time:', _time, '- number of finished trials:', len(study.trials))
+
+        break
+        # export results
+        classifier.fit(X, y)  # fit model for dumping
+        file = 'results\\train_' + str(classifier.__class__.__name__) + '.xlsx'         # load previous results
+        if exists(file) == False:
+            export_results(target, X, _cv, classifier,
+                           metrics, _time, tune_algorithm)                              # export results first time
+            export_model(classifier, metrics,
+                         df_targets[target], df_predicts)                               # export model
+            cv = StratifiedKFold(n_splits=5, random_state=None)
+            metric_auc = roc_auc(X, y, cv, classifier, target)                          # plot ROC CV curve
+        else:
+            previous_results = pd.read_excel(file, index_col=0, header=None)            # load previous results
+            if (metrics['roc_auc'] > 0.01 + previous_results.loc[:,
+                                            previous_results.loc['TARGET']
+                                            == target].loc['roc_auc'].max()) or \
+                    ((previous_results.loc['TARGET'] != target).all()):                 # if new model better
+
+                export_results(target, X, _cv, classifier,
+                               metrics, _time, tune_algorithm)                          # then previous results
+                export_model(classifier, metrics,
+                             df_targets[target], df_predicts)                           # store model & result
+                cv = StratifiedKFold(n_splits=5, random_state=None)                     # plot ROC CV curve
+                metric_auc = roc_auc(X, y, cv, classifier, target)
+
+    print('\n+++ Optuna work completed successfully +++\n')
+
+
+
+    # TODO: Hyperopt: https://neptune.ai/blog/optuna-vs-hyperopt
+    # TODO: AutoML
+

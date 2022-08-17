@@ -94,26 +94,27 @@ if __name__ == '__main__':
     # drop_cals.remove('Пред. |ФР ССЗ|АГ')                                          # save a specific element
     df.drop(drop_cals, axis=1, inplace=True)
 
+    # drop correlated predictors with float type
+    df.drop(['Интраоп Время пережатия аорты',
+             'Интраоп T-тела',
+             'Интраоп Количество КП'], axis=1,  inplace=True)                       # drop correlated columns
+
+    # drop custom data
+    del_cols = df.columns[df.columns.str.contains('^Отдал.*') == True]
+    df.drop(del_cols, axis=1, inplace=True)                                         # drop custom columns
+
     # check the remained data
     data_list = pd.DataFrame(data_list, index = data_list.values)
     remained_data = pd.Series('yes', index=[col for col in list(df.columns)
                                             if col in list(data_list.index)])
     data_list.rename(columns={data_list.columns[0]: 'remained'}, inplace=True)
     data_list['remained'] = remained_data
-    data_list.to_excel("dataset/remained_data_list.xlsx")
+    data_list.to_excel("dataset/remained_data_list.xlsx")                           # export list of prepared data
 
     # fill NA/NaN values in float data
     float_cols_lst = list(df.dtypes[df.dtypes == 'float64'].index)
     df[float_cols_lst] = df[float_cols_lst].fillna(df[float_cols_lst].mean(), axis=0)
 
-    # drop correlated predictors with float type
-    print('float columns list:\n', pd.Series(float_cols_lst))
-    df.drop(['Интраоп Время пережатия аорты', 'Интраоп T-тела', 'Интраоп Количество КП'], axis=1,  inplace=True)
-
     # save prepared data to excel
     df.to_excel("dataset/prepared_data.xlsx", sheet_name='prepared_data')
-
-
-
-
 

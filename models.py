@@ -152,7 +152,8 @@ def skl_gb_cl():
                            'n_iter_no_change': [10],
                            'tol': [1e-3, 1e-4],
                            'ccp_alpha': [0],
-                           'verbose': [0]
+                           'verbose': [0],
+                           'random_state': [0]
                            }
     return classifier, param_distributions
 
@@ -192,7 +193,8 @@ def xg_boost():
         # 'num_parallel_tree': [],
         # 'monotone_constraints': [],
         # 'interaction_constraints': [],
-        'verbosity': [0]
+        'verbosity': [0],
+        'random_state': [0]
     }
     return classifier, param_distributions
 
@@ -205,7 +207,8 @@ def catboost_cl():
         'iterations': [10, 20, 30, 40, 50, 60, 70, 80, 90, 100],
         'loss_function': ["Logloss"],
         'scale_pos_weight': [0.01, 0.1, 0.5, 1.0],
-        'verbose': [False]
+        'verbose': [False],
+        'random_state': [0]
     }
     return classifier, param_distributions
 
@@ -219,6 +222,7 @@ def lightgbm_cl():
         'feature_fraction': [0.7, 0.8, 0.9],
         'lambda_l1': [0, 1, 10],
         'verbose_eval': [False],
-        'verbose': [-1]
+        'verbose': [-1],
+        'random_state': [0]
     }
     return classifier, param_distributions
