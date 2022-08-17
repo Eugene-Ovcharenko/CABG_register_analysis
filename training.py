@@ -14,6 +14,8 @@ from sklearn.model_selection import StratifiedKFold
 from sklearn.metrics import auc
 from sklearn.metrics import RocCurveDisplay
 from sklearn.linear_model import LogisticRegression
+from sklearn.model_selection import cross_val_score
+import xgboost as xgb
 import optuna
 import functools
 
@@ -30,19 +32,16 @@ from models import catboost_cl
 from models import lightgbm_cl
 
 
-# TODO: optuna optimization function:
-from sklearn.model_selection import cross_val_score
-import xgboost as xgb
 
 def optuna_xgb_clf(X, y, trial):
 
     n_estimators = trial.suggest_int('n_estimators', 0, 1000)
-    max_depth = trial.suggest_int('max_depth', 1, 20, 50)
-    min_child_weight = trial.suggest_int('min_child_weight', 1, 20, 50)
+    max_depth = trial.suggest_int('max_depth', 1, 50, 1)
+    min_child_weight = trial.suggest_int('min_child_weight', 1, 50, 1)
     learning_rate = trial.suggest_discrete_uniform('learning_rate', 0.01, 0.1, 0.01)
     scale_pos_weight = trial.suggest_int('scale_pos_weight', 1, 100)
     subsample = trial.suggest_discrete_uniform('subsample', 0.5, 0.9, 0.1)
-    colsample_bytree = trial.suggest_discrete_uniform('colsample_bytree', 0.1, 0.5, 0.9)
+    colsample_bytree = trial.suggest_discrete_uniform('colsample_bytree', 0.1, 0.9, 0.1)
 
     classifier = xgb.XGBClassifier(
         booster = "gbtree",
@@ -363,7 +362,6 @@ if __name__ == '__main__':
     print('\n+++ Random Search CV work completed successfully +++\n')
 
 
-    # TODO: Optuna:
     # Optuna model optimizer -------------------------------------------------------------------------------------------
     tune_algorithm = 'Optuna'
     X = np.array(df_predicts)                                                           # define X (predicts) data
@@ -374,7 +372,7 @@ if __name__ == '__main__':
 
         start = time()
         study = optuna.create_study(direction='minimize')
-        study.optimize(functools.partial(optuna_xgb_clf, X, y), n_trials=100)            # set number of trials
+        study.optimize(functools.partial(optuna_xgb_clf, X, y), n_trials=1000)          # set number of trials
 
         classifier = xgb.XGBClassifier(**study.best_trial.params)
         cv = StratifiedKFold(n_splits=5, random_state=None)                             # plot ROC CV curve
@@ -386,7 +384,6 @@ if __name__ == '__main__':
         print('roc_auc', 'SCORE: \033[91m{0:.3f}\033[00m'.format(metric))
         print('Time:', _time, '- number of finished trials:', len(study.trials))
 
-        break
         # export results
         classifier.fit(X, y)  # fit model for dumping
         file = 'results\\train_' + str(classifier.__class__.__name__) + '.xlsx'         # load previous results
@@ -413,7 +410,9 @@ if __name__ == '__main__':
 
     print('\n+++ Optuna work completed successfully +++\n')
 
-
+    # TODO: Optuna visualization?
+    # TODO: Optuna + LightGBM
+    # TODO: Optuna + CatBoost
 
     # TODO: Hyperopt: https://neptune.ai/blog/optuna-vs-hyperopt
     # TODO: AutoML
