@@ -31,49 +31,54 @@ from sklearn.metrics import DetCurveDisplay, RocCurveDisplay
 
 if __name__ == '__main__':
 
-    # get the list of files by regex ^train_*
+    # get the list of files
     path = 'results\\'
-    files_list = [file for file in os.listdir(path) if os.path.isfile(os.path.join(path, file))]
-    r = re.compile('^train_*')
+    files_list = [file for file in os.listdir(path) if
+                  os.path.isfile(os.path.join(path, file))]
+    r = re.compile('^train_*')                                                          # by regex ^train_*
     files_list = list(filter(r.match, files_list))
 
+    # concatenate all models results
+    results = pd.DataFrame()
     for file in files_list:
         file = path + file
         df = pd.read_excel(file, index_col=0, header=None)
         df.set_axis(df.loc['TARGET'], axis='columns', inplace=True)
-        df = df.sort_values(by='roc_auc', axis=1, ascending=False)
+        df = df.sort_values(by='roc_auc', axis=1, ascending=False)                      # sort for drop cols except max
         df = df.loc[:, ~df.columns.duplicated()]
+        results = pd.concat([results, df], axis=1)
+    results = results.T.reset_index(drop=True).T                                        # drop column names
+    results.to_excel('results\\all_models_results.xlsx')                                # export data
 
-        # ROC curve
-        fig, [ax_roc, ax_det] = plt.subplots(1, 2, figsize=(11, 5))
+    for target in results.loc['TARGET'].unique():
+        fig, [ax_roc, ax_det] = plt.subplots(1, 2, figsize=(16, 8))                     # ROC curve
+        for model in results.loc['Model'].unique():
+            metric = results.loc['roc_auc', (results.loc['Model'] == model) &
+                                 (results.loc['TARGET'] == target)].values
+            if metric.size == 0:
+                print('\033[91m Warning: No data for ', target, '|', model, '\033[0m')
+            else:
+                file_name = target.replace(" ", "_") + '_' + \
+                            model + '_roc_auc_' + str(metric[0])
+                file = 'models\\' + file_name + '_model.sav'
+                clf = pickle.load(open(file, 'rb'))
+                file = 'models\\' + file_name + '_target.sav'
+                y = pd.read_pickle(file)
+                file = 'models\\' + file_name + '_predicts.sav'
+                X = pd.read_pickle(file)
 
-        for target in df.loc['TARGET']:
-            file_name = target.replace(" ", "_") + '_' + \
-                        df[target].loc['Model'] + '_roc_auc_' + \
-                        str(df[target].loc['roc_auc'])
+                score = cross_val_score(clf, X, y, scoring="roc_auc", cv=5).mean()
+                print(file_name, '\tTest_score\t', score)
 
-            file = 'models\\' + file_name + '_model.sav'
-            model = pickle.load(open(file, 'rb'))
-            file = 'models\\' + file_name + '_target.sav'
-            y = pd.read_pickle(file)
-            file = 'models\\' + file_name + '_predicts.sav'
-            X = pd.read_pickle(file)
+                X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, random_state=0)
 
-            score = cross_val_score(model, X, y, scoring="roc_auc", cv=5).mean()
-            print(file_name, '\tTest_score\t', score)
+                RocCurveDisplay.from_estimator(clf, X_test, y_test, ax=ax_roc, name=model)
+                DetCurveDisplay.from_estimator(clf, X_test, y_test, ax=ax_det, name=model)
 
-            # xx = roc_curves(y, model.predict(X))
-
-            X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.4, random_state=0)
-
-            RocCurveDisplay.from_estimator(model, X_test, y_test, ax=ax_roc, name=target)
-            # DetCurveDisplay.from_estimator(model, X_test, y_test, ax=ax_det, name=df[target].loc['Model'])
-
-        ax_roc.set_title("Receiver Operating Characteristic (ROC) curves")
-        ax_det.set_title("Detection Error Tradeoff (DET) curves")
-
-        ax_roc.grid(linestyle="--")
-        ax_det.grid(linestyle="--")
+            ax_roc.set_title('Receiver Operating Characteristic (ROC) curves: ' + target)
+            ax_roc.grid(linestyle="--")
+            ax_det.set_title('Detection Error Tradeoff (DET) curves: ' + target)
+            ax_det.grid(linestyle="--")
 
         plt.legend()
         plt.show()
