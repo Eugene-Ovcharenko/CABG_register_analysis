@@ -4,9 +4,11 @@ from time import time
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import seaborn as sns
 import json
 import pickle
+import xgboost as xgb
+import optuna
+import functools
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.experimental import enable_halving_search_cv
 from sklearn.model_selection import HalvingRandomSearchCV
@@ -15,10 +17,6 @@ from sklearn.metrics import auc
 from sklearn.metrics import RocCurveDisplay
 from sklearn.linear_model import LogisticRegression
 from sklearn.model_selection import cross_val_score
-import xgboost as xgb
-import optuna
-import functools
-
 from models import decision_tree_cl
 from models import random_forest_cl
 from models import skl_knn_cl
@@ -58,8 +56,6 @@ def optuna_xgb_clf(X, y, trial):
     roc_auc_cv5 = cross_val_score(classifier, X, y, scoring="roc_auc", cv=5).mean()
 
     return (1.0 - roc_auc_cv5)
-
-
 
 
 # Random Search CV function --------------------------------------------------------------------------------------------
@@ -306,7 +302,7 @@ if __name__ == '__main__':
               catboost_cl()
               )                                                                         # <- Models for optimization
 
-    rnd_iterations = 0                                                                  # Number of cycles of rnd search
+    rnd_iterations = 10                                                                 # Number of cycles of rnd search
 
     # train and test each of the model in the loop
     for model in models:
@@ -372,7 +368,7 @@ if __name__ == '__main__':
 
         start = time()
         study = optuna.create_study(direction='minimize')
-        study.optimize(functools.partial(optuna_xgb_clf, X, y), n_trials=1000)          # set number of trials
+        study.optimize(functools.partial(optuna_xgb_clf, X, y), n_trials=10000)          # set number of trials
 
         classifier = xgb.XGBClassifier(**study.best_trial.params)
         cv = StratifiedKFold(n_splits=5, random_state=None)                             # plot ROC CV curve
@@ -388,7 +384,7 @@ if __name__ == '__main__':
         classifier.fit(X, y)  # fit model for dumping
         file = 'results\\train_' + str(classifier.__class__.__name__) + '.xlsx'         # load previous results
         if exists(file) == False:
-            export_results(target, X, _cv, classifier,
+            export_results(target, X, cv, classifier,
                            metrics, _time, tune_algorithm)                              # export results first time
             export_model(classifier, metrics,
                          df_targets[target], df_predicts)                               # export model
@@ -401,19 +397,11 @@ if __name__ == '__main__':
                                             == target].loc['roc_auc'].max()) or \
                     ((previous_results.loc['TARGET'] != target).all()):                 # if new model better
 
-                export_results(target, X, _cv, classifier,
+                export_results(target, X, cv, classifier,
                                metrics, _time, tune_algorithm)                          # then previous results
                 export_model(classifier, metrics,
                              df_targets[target], df_predicts)                           # store model & result
                 cv = StratifiedKFold(n_splits=5, random_state=None)                     # plot ROC CV curve
                 metric_auc = roc_auc(X, y, cv, classifier, target)
 
-    print('\n+++ Optuna work completed successfully +++\n')
-
-    # TODO: Optuna visualization?
-    # TODO: Optuna + LightGBM
-    # TODO: Optuna + CatBoost
-
-    # TODO: Hyperopt: https://neptune.ai/blog/optuna-vs-hyperopt
-    # TODO: AutoML
-
+    print('\n+++ XGBoost Optuna work completed successfully +++\n')
