@@ -2,18 +2,14 @@ import os
 import numpy as np
 import pandas as pd
 from pandas import DataFrame
-
-import xlsxwriter
 import matplotlib.pyplot as plt
 import seaborn as sns
-
-import scipy
 from scipy.stats import fisher_exact
 from sklearn.feature_selection import mutual_info_regression
 
-
 import warnings
 warnings.filterwarnings("ignore")
+
 
 path = 'results'
 os.makedirs(path, exist_ok=True)
@@ -118,12 +114,9 @@ if __name__ == '__main__':
         print('\nScore:', target)
         mi_scores = mutual_information(df_predicts, df_target[target])
         print(mi_scores.head(5))
-        
+
     # Correlation check
     cor_plot(df_float)
 
-    # TODO: add plot for mutual_information
-    # TODO: PSM https://towardsdatascience.com/psmpy-propensity-score-matching-in-python-a3e0cd4d2631
-    #           https://analyticsmayhem.com/digital-analytics/propensity-score-matching-python/
 
 
